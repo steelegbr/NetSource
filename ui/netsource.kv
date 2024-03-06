@@ -20,8 +20,26 @@
                 size_hint_x: 0.5
                 text: root.button_text
 
+<AudioInputBlock>:
+        height: "55dp"
+        size_hint_y: None
+        Label:
+                bold: True
+                font_size: 24
+                size_hint_x: 0.5
+                text: "Audio Input"
+        Spinner:
+                on_text: root.change_sound_card(self.text)
+                padding: [0]
+                size_hint_x: 1
+                text: root.selected_sound_card
+                values: root.sound_cards
+
 <HomeScreen>:
         cols: 1
+        padding: [5, 0]
+        spacing: [0, 20]
         ScheduleServiceBanner:
+        AudioInputBlock:
                 
             
