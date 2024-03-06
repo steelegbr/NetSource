@@ -1,6 +1,8 @@
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.properties import ListProperty, StringProperty
+from services.audio import AudioService, SoundCard
+from services.settings import SettingsService
 from services.schedule import ScheduleService, ScheduleServiceStatus
 from typing import Dict, List
 
@@ -46,6 +48,49 @@ class ScheduleServiceBanner(BoxLayout):
                 self.__schedule_service.start()
             case _:
                 self.__schedule_service.stop()
+
+
+class AudioInputBlock(BoxLayout):
+    selected_sound_card = StringProperty("")
+    sound_cards = ListProperty([])
+
+    __audio_service: AudioService
+    __settings_service: SettingsService
+    __sound_cards: List[SoundCard]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # Enumerate sound cards
+
+        self.__audio_service = AudioService.instance()
+        self.__sound_cards = self.__audio_service.get_soundcards()
+        self.sound_cards = [
+            self.__serialise(sound_card) for sound_card in self.__sound_cards
+        ]
+
+        # Set the option from last time (if we have it)
+
+        self.__settings_service = SettingsService()
+        settings = self.__settings_service.get()
+        self.selected_sound_card = settings.input_device
+        self.change_sound_card(settings.input_device)
+
+    def __serialise(self, sound_card: SoundCard) -> str:
+        return f"[{sound_card.id}][{sound_card.engine}] {sound_card.name}"
+
+    def change_sound_card(self, sound_card_text: str):
+        possible_sound_cards = [
+            sound_card
+            for sound_card in self.__sound_cards
+            if self.__serialise(sound_card) == sound_card_text
+        ]
+
+        if possible_sound_cards:
+            settings = self.__settings_service.get()
+            settings.input_device = sound_card_text
+            self.__settings_service.save(settings)
+            self.__audio_service.set_input_device(possible_sound_cards[0])
 
 
 class HomeScreen(GridLayout):
