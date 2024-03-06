@@ -42,11 +42,11 @@ class ScheduleService:
     def deregister_callback(self, callback: Callable[[ScheduleServiceStatus], None]):
         if callback in self.__callbacks:
             self.__callbacks.remove(callback)
-        self.__logger.info(f"{self.LOG_PREFIX}: Deregister callback %s", callback)
+        self.__logger.info(f"{self.LOG_PREFIX}: deregister callback %s", callback)
 
     def register_callback(self, callback: Callable[[ScheduleServiceStatus], None]):
         self.__callbacks.append(callback)
-        self.__logger.info(f"{self.LOG_PREFIX}: Register callback %s", callback)
+        self.__logger.info(f"{self.LOG_PREFIX}: register callback %s", callback)
         callback(self.get_status())
 
     def start(self):

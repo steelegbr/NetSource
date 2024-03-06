@@ -96,8 +96,38 @@ class AudioInputBlock(BoxLayout):
 
 
 class AudioLevelsBlock(GridLayout):
-    level_left = NumericProperty(70)
-    level_right = NumericProperty(70)
+    colour_left = ListProperty([1, 1, 1, 1])
+    colour_right = ListProperty([1, 1, 1, 1])
+    level_left = NumericProperty(0)
+    level_right = NumericProperty(0)
+
+    # Trigger at -3dBFS and -6dBFS
+
+    LEVEL_RED = 10 ** (-3 / 20) * 100
+    LEVEL_ORANGE = 10 ** (-6 / 20) * 100
+    COLOUR_ORANGE = [0.94, 0.55, 0.2, 1]
+    COLOUR_GREEN = [0.13, 0.55, 0.1, 1]
+    COLOUR_RED = [1, 0, 0, 1]
+
+    __audio_service: AudioService
+
+    def __init__(self, audio_service: AudioService = AudioService.instance(), **kwargs):
+        super().__init__(**kwargs)
+        self.__audio_service = audio_service
+        self.__audio_service.register_levels_callback(self.__levels_callback)
+
+    def __calculate_colour(self, value: float) -> List:
+        if value > self.LEVEL_RED:
+            return self.COLOUR_RED
+        if value > self.LEVEL_ORANGE:
+            return self.COLOUR_ORANGE
+        return self.COLOUR_GREEN
+
+    def __levels_callback(self, left: float, right: float):
+        self.level_left = left
+        self.level_right = right
+        self.colour_left = self.__calculate_colour(left)
+        self.colour_right = self.__calculate_colour(right)
 
 
 class HomeScreen(GridLayout):

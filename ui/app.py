@@ -1,4 +1,4 @@
-from kivy.app import App
+from kivymd.app import App
 from ui.home import HomeScreen
 
 
