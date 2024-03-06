@@ -56,10 +56,10 @@ class AudioService:
         )
 
     @classmethod
-    def instance(cls):
+    def instance(cls, logger: Logger = get_logger(__name__)):
         if cls.__instance is None:
             cls.__instance = cls.__new__(cls)
-            cls.__instance.__logger = get_logger(__name__)
+            cls.__instance.__logger = logger
             cls.__pa = PyAudio()
         return cls.__instance
 

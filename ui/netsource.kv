@@ -35,11 +35,24 @@
                 text: root.selected_sound_card
                 values: root.sound_cards
 
+<AudioLevelsBlock>:
+        cols: 1
+        height: "20dp"
+        size_hint_y: None
+        ProgressBar:
+                max: 100
+                value: root.level_left
+        ProgressBar:
+                max: 100
+                value: root.level_right
+
+
 <HomeScreen>:
         cols: 1
         padding: [5, 0]
         spacing: [0, 20]
         ScheduleServiceBanner:
         AudioInputBlock:
+        AudioLevelsBlock:
                 
             

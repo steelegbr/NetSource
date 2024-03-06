@@ -1,6 +1,6 @@
+from kivy.properties import ListProperty, NumericProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.properties import ListProperty, StringProperty
 from services.audio import AudioService, SoundCard
 from services.settings import SettingsService
 from services.schedule import ScheduleService, ScheduleServiceStatus
@@ -32,9 +32,11 @@ class ScheduleServiceBanner(BoxLayout):
         ScheduleServiceStatus.Stopped: "Stopped",
     }
 
-    def __init__(self, **kwargs):
+    def __init__(
+        self, schedule_service: ScheduleService = ScheduleService.instance(), **kwargs
+    ):
         super().__init__(**kwargs)
-        self.__schedule_service = ScheduleService.instance()
+        self.__schedule_service = schedule_service
         self.__schedule_service.register_callback(self.__schedule_service_callback)
 
     def __schedule_service_callback(self, status: ScheduleServiceStatus):
@@ -58,12 +60,12 @@ class AudioInputBlock(BoxLayout):
     __settings_service: SettingsService
     __sound_cards: List[SoundCard]
 
-    def __init__(self, **kwargs):
+    def __init__(self, audio_service: AudioService = AudioService.instance(), **kwargs):
         super().__init__(**kwargs)
 
         # Enumerate sound cards
 
-        self.__audio_service = AudioService.instance()
+        self.__audio_service = audio_service
         self.__sound_cards = self.__audio_service.get_soundcards()
         self.sound_cards = [
             self.__serialise(sound_card) for sound_card in self.__sound_cards
@@ -91,6 +93,11 @@ class AudioInputBlock(BoxLayout):
             settings.input_device = sound_card_text
             self.__settings_service.save(settings)
             self.__audio_service.set_input_device(possible_sound_cards[0])
+
+
+class AudioLevelsBlock(GridLayout):
+    level_left = NumericProperty(70)
+    level_right = NumericProperty(70)
 
 
 class HomeScreen(GridLayout):

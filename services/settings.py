@@ -15,8 +15,8 @@ class SettingsService:
     INDEX_SETTINGS = "SETTINGS"
     LOG_PREFIX = "Settings Service"
 
-    def __init__(self) -> None:
-        self.__logger = get_logger(__name__)
+    def __init__(self, logger: Logger = get_logger(__name__)) -> None:
+        self.__logger = logger
 
     def get(self) -> Settings:
         self.__logger.info(
