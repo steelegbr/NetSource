@@ -1,0 +1,27 @@
+#:kivy 1.0.9
+
+<ScheduleServiceBanner>:
+        height: "45dp"
+        size_hint_y: None
+        Label:
+                canvas.before:
+                        Color:
+                                rgba: root.status_colour
+                        Rectangle:
+                                size: self.size
+                                pos: self.pos
+                bold: True
+                font_size: 32
+                size_hint_x: 1
+                text: root.status_text
+        Button:
+                font_size: 32
+                on_press: root.toggle_schedule_service()
+                size_hint_x: 0.5
+                text: root.button_text
+
+<HomeScreen>:
+        cols: 1
+        ScheduleServiceBanner:
+                
+            
