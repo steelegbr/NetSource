@@ -1,11 +1,7 @@
 from configparser import ConfigParser
+from models.settings import Settings
 from os import environ
-from pydantic import BaseModel
 from services.logging import get_logger, Logger
-
-
-class Settings(BaseModel):
-    input_device: str = ""
 
 
 class SettingsService:

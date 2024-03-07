@@ -21,7 +21,7 @@ from pyaudio import (
 )
 from pydantic import BaseModel
 from services.logging import get_logger, Logger
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Tuple
 
 
 class AudioEngineState(StrEnum):
@@ -56,15 +56,18 @@ class SoundCard(BaseModel):
 class AudioService:
     __input_device: SoundCard
     __instance = None
-    __level_callbacks: List[Callable[[float, float], None]]
+    __level_callbacks_input: List[Callable[[float, float], None]]
+    __level_callbacks_output: List[Callable[[float, float], None]]
     __logger: Logger
+    __output_device: SoundCard
     __pa: PyAudio
     __state: AudioEngineState
-    __stream: Stream
+    __stream_in: Stream
+    __stream_out: Stream
 
     LOG_PREFIX = "Audio Service"
-    MAX_CHANNELS = 2
     SAMPLE_RATE = 48000
+    STEREO = 2
     WORD_SIZE = 2
 
     def __init__(self) -> None:
@@ -77,13 +80,15 @@ class AudioService:
         if cls.__instance is None:
             cls.__instance = cls.__new__(cls)
             cls.__instance.__input_device = None
-            cls.__instance.__level_callbacks = []
+            cls.__instance.__level_callbacks_input = []
+            cls.__instance.__level_callbacks_output = []
             cls.__instance.__logger = logger
+            cls.__instance.__output_device = None
             cls.__pa = PyAudio()
             cls.__state = AudioEngineState.Stopped
         return cls.__instance
 
-    def get_soundcards(self) -> List[SoundCard]:
+    def get_soundcards(self, input: bool) -> List[SoundCard]:
         device_count = self.__pa.get_device_count()
         self.__logger.info(f"{self.LOG_PREFIX}: found %d device(s)", device_count)
 
@@ -91,7 +96,7 @@ class AudioService:
 
         for i in range(0, device_count):
             current_device = self.__pa.get_device_info_by_index(i)
-            if current_device["maxInputChannels"] > 0:
+            if input and current_device["maxInputChannels"] > 0:
                 sound_card = SoundCard(
                     channels=current_device["maxInputChannels"],
                     engine=current_device["hostApi"],
@@ -102,9 +107,22 @@ class AudioService:
                     f"{self.LOG_PREFIX}: mapped sound card %s", sound_card
                 )
                 sound_cards.append(sound_card)
+            elif not input and current_device["maxOutputChannels"] >= self.STEREO:
+                sound_card = SoundCard(
+                    channels=current_device["maxOutputChannels"],
+                    engine=current_device["hostApi"],
+                    id=current_device["index"],
+                    name=current_device["name"],
+                )
+                self.__logger.info(
+                    f"{self.LOG_PREFIX}: mapped sound card %s", sound_card
+                )
+                sound_cards.append(sound_card)
 
         self.__logger.info(
-            f"{self.LOG_PREFIX}: found %d recording device(s)", len(sound_cards)
+            f"{self.LOG_PREFIX}: found %d %s device(s)",
+            len(sound_cards),
+            "recording" if input else "playback",
         )
         return sound_cards
 
@@ -116,30 +134,59 @@ class AudioService:
             self.__input_device = sound_card
             self.start()
 
+    def set_output_device(self, sound_card: SoundCard):
+        self.__logger.info(f"{self.LOG_PREFIX}: set output device to %s", sound_card)
+        if not self.__output_device == sound_card:
+            if self.__state == AudioEngineState.Started:
+                self.stop()
+            self.__output_device = sound_card
+            self.start()
+
     def stop(self):
         self.__logger.info(f"{self.LOG_PREFIX}: stop audio engine")
-        if self.__stream:
-            self.__stream.stop_stream()
-            self.__stream.close()
-            self.__stream = None
+        if self.__stream_in:
+            self.__stream_in.stop_stream()
+            self.__stream_in.close()
+            self.__stream_in = None
+        if self.__stream_out:
+            self.__stream_out.stop_stream()
+            self.__stream_out.close()
+            self.__stream_out = None
 
     def start(self):
+        if not (self.__input_device and self.__output_device):
+            self.__logger.warn(
+                f"{self.LOG_PREFIX}: failed to start audio engine as we need both devices"
+            )
+            return
+
         self.__logger.info(
             f"{self.LOG_PREFIX}: start audio engine on devices %s", self.__input_device
         )
-        self.__stream = self.__pa.open(
+        self.__stream_in = self.__pa.open(
             self.SAMPLE_RATE,
-            self.__calculate_channel_count(),
+            self.__calculate_channel_count(True),
             self.__pa.get_format_from_width(self.WORD_SIZE),
             True,
             False,
             self.__input_device.id,
             stream_callback=self.__record_callback,
         )
+        self.__stream_out = self.__pa.open(
+            self.SAMPLE_RATE,
+            self.__calculate_channel_count(False),
+            self.__pa.get_format_from_width(self.WORD_SIZE),
+            False,
+            True,
+            self.__output_device.id,
+            stream_callback=self.__play_callback,
+        )
         self.__state = AudioEngineState.Started
 
-    def __calculate_channel_count(self) -> int:
-        return min(self.__input_device.channels, self.MAX_CHANNELS)
+    def __calculate_channel_count(self, input: bool) -> int:
+        if input:
+            return min(self.__input_device.channels, self.STEREO)
+        return self.STEREO
 
     def __calculate_numpy_type(self):
         if self.WORD_SIZE == 2:
@@ -149,17 +196,33 @@ class AudioService:
     def __record_callback(
         self, in_data: bytes, frame_count: int, time_info: Dict, status
     ):
-        self.__calculate_levels(in_data, frame_count)
+        vol_left, vol_right = self.__calculate_levels(
+            in_data, self.__calculate_channel_count(True), frame_count
+        )
+        for callback in self.__level_callbacks_input:
+            callback(vol_left, vol_right)
+
         return (in_data, paContinue)
 
-    def __calculate_levels(self, in_data: bytes, frame_count: int):
+    def __play_callback(
+        self, in_data: bytes, frame_count: int, time_info: Dict, status
+    ):
+        data = b"\x00" * frame_count
+        vol_left, vol_right = self.__calculate_levels(
+            data, self.__calculate_channel_count(False), frame_count
+        )
+        for callback in self.__level_callbacks_output:
+            callback(vol_left, vol_right)
+
+        return (data, paContinue)
+
+    def __calculate_levels(
+        self, data: bytes, channel_count: int, frame_count: int
+    ) -> Tuple[int, int]:
         # Decode and deinterleve
 
-        frames = np.frombuffer(in_data, self.__calculate_numpy_type())
-        deinterleaved = [
-            frames[idx :: self.__calculate_channel_count()]
-            for idx in range(self.__calculate_channel_count())
-        ]
+        frames = np.frombuffer(data, self.__calculate_numpy_type())
+        deinterleaved = [frames[idx::channel_count] for idx in range(channel_count)]
 
         # Calculate a VU number
         # We force stereo
@@ -183,18 +246,30 @@ class AudioService:
         else:
             vol_right = 0
 
-        # Callbacks
+        return (vol_left, vol_right)
 
-        for callback in self.__level_callbacks:
-            callback(vol_left, vol_right)
-
-    def register_levels_callback(self, callback: Callable[[float, float], None]):
-        self.__level_callbacks.append(callback)
-        self.__logger.info(f"{self.LOG_PREFIX}: register levels callback %s", callback)
-
-    def deregister_levels_callback(self, callback: Callable[[float, float], None]):
-        if callback in self.__level_callbacks:
-            self.__level_callbacks.remove(callback)
+    def register_levels_callback(
+        self, input: bool, callback: Callable[[float, float], None]
+    ):
+        if input:
+            self.__level_callbacks_input.append(callback)
+        else:
+            self.__level_callbacks_output.append(callback)
         self.__logger.info(
-            f"{self.LOG_PREFIX}: deregister levels callback %s", callback
+            f"{self.LOG_PREFIX}: register %s levels callback %s",
+            "input" if input else "output",
+            callback,
+        )
+
+    def deregister_levels_callback(
+        self, input: bool, callback: Callable[[float, float], None]
+    ):
+        if input and callback in self.__level_callbacks_input:
+            self.__level_callbacks_input.remove(callback)
+        elif not input and callback in self.__level_callbacks_output:
+            self.__level_callbacks_output.remove(callback)
+        self.__logger.info(
+            f"{self.LOG_PREFIX}: deregister %s levels callback %s",
+            "input" if input else "output",
+            callback,
         )

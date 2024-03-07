@@ -20,14 +20,14 @@
                 size_hint_x: 0.5
                 text: root.button_text
 
-<AudioInputBlock>:
+<AudioSelectBlock>:
         height: "55dp"
         size_hint_y: None
         Label:
                 bold: True
                 font_size: 24
                 size_hint_x: 0.5
-                text: "Audio Input"
+                text: root.label_text
         Spinner:
                 on_text: root.change_sound_card(self.text)
                 padding: [0]
@@ -56,7 +56,13 @@
         padding: [5, 0]
         spacing: [0, 20]
         ScheduleServiceBanner:
-        AudioInputBlock:
+        AudioSelectBlock:
+                audio_input: True
         AudioLevelsBlock:
+                audio_input: True
+        AudioSelectBlock:
+                audio_input: False
+        AudioLevelsBlock:
+                audio_input: False
                 
             

@@ -1,4 +1,9 @@
-from kivy.properties import ListProperty, NumericProperty, StringProperty
+from kivy.properties import (
+    BooleanProperty,
+    ListProperty,
+    NumericProperty,
+    StringProperty,
+)
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from services.audio import AudioService, SoundCard
@@ -52,7 +57,9 @@ class ScheduleServiceBanner(BoxLayout):
                 self.__schedule_service.stop()
 
 
-class AudioInputBlock(BoxLayout):
+class AudioSelectBlock(BoxLayout):
+    audio_input = BooleanProperty()
+    label_text = StringProperty("")
     selected_sound_card = StringProperty("")
     sound_cards = ListProperty([])
 
@@ -62,11 +69,24 @@ class AudioInputBlock(BoxLayout):
 
     def __init__(self, audio_service: AudioService = AudioService.instance(), **kwargs):
         super().__init__(**kwargs)
+        self.__audio_service = audio_service
+        self.update_options()
+
+    def on_audio_input(self, instance, value):
+        self.audio_input = value
+        self.update_options()
+
+    def update_options(self):
+        # Set the label text
+
+        if self.audio_input:
+            self.label_text = "Audio Input"
+        else:
+            self.label_text = "Audio Output"
 
         # Enumerate sound cards
 
-        self.__audio_service = audio_service
-        self.__sound_cards = self.__audio_service.get_soundcards()
+        self.__sound_cards = self.__audio_service.get_soundcards(self.audio_input)
         self.sound_cards = [
             self.__serialise(sound_card) for sound_card in self.__sound_cards
         ]
@@ -75,8 +95,13 @@ class AudioInputBlock(BoxLayout):
 
         self.__settings_service = SettingsService()
         settings = self.__settings_service.get()
-        self.selected_sound_card = settings.input_device
-        self.change_sound_card(settings.input_device)
+
+        if self.audio_input and settings.input_device:
+            self.selected_sound_card = settings.input_device
+            self.change_sound_card(settings.input_device)
+        elif not self.audio_input and settings.output_device:
+            self.selected_sound_card = settings.output_device
+            self.change_sound_card(settings.output_device)
 
     def __serialise(self, sound_card: SoundCard) -> str:
         return f"[{sound_card.id}][{sound_card.engine}] {sound_card.name}"
@@ -90,12 +115,19 @@ class AudioInputBlock(BoxLayout):
 
         if possible_sound_cards:
             settings = self.__settings_service.get()
-            settings.input_device = sound_card_text
-            self.__settings_service.save(settings)
-            self.__audio_service.set_input_device(possible_sound_cards[0])
+
+            if self.audio_input:
+                settings.input_device = sound_card_text
+                self.__settings_service.save(settings)
+                self.__audio_service.set_input_device(possible_sound_cards[0])
+            else:
+                settings.output_device = sound_card_text
+                self.__settings_service.save(settings)
+                self.__audio_service.set_output_device(possible_sound_cards[0])
 
 
 class AudioLevelsBlock(GridLayout):
+    audio_input = BooleanProperty()
     colour_left = ListProperty([1, 1, 1, 1])
     colour_right = ListProperty([1, 1, 1, 1])
     level_left = NumericProperty(0)
@@ -114,7 +146,11 @@ class AudioLevelsBlock(GridLayout):
     def __init__(self, audio_service: AudioService = AudioService.instance(), **kwargs):
         super().__init__(**kwargs)
         self.__audio_service = audio_service
-        self.__audio_service.register_levels_callback(self.__levels_callback)
+        self.__register_callback()
+
+    def on_audio_input(self, instance, value):
+        self.audio_input = value
+        self.__register_callback()
 
     def __calculate_colour(self, value: float) -> List:
         if value > self.LEVEL_RED:
@@ -128,6 +164,14 @@ class AudioLevelsBlock(GridLayout):
         self.level_right = right
         self.colour_left = self.__calculate_colour(left)
         self.colour_right = self.__calculate_colour(right)
+
+    def __register_callback(self):
+        self.__audio_service.deregister_levels_callback(
+            not self.audio_input, self.__levels_callback
+        )
+        self.__audio_service.register_levels_callback(
+            self.audio_input, self.__levels_callback
+        )
 
 
 class HomeScreen(GridLayout):
