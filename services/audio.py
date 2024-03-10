@@ -21,13 +21,17 @@ from pyaudio import (
 )
 from pydantic import BaseModel
 from services.logging import get_logger, Logger
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
+from utils.audio import AudioConverter, PlayThroughSampleBuffer
 
 
 class AudioEngineState(StrEnum):
     Stopped = "STOP"
     Started = "START"
     Error = "ERROR"
+    FadeIn = "FADE_IN"
+    FadeOut = "FADE_OUT"
+    Relaying = "RELAYING"
 
 
 class AudioEngine(Enum):
@@ -54,6 +58,8 @@ class SoundCard(BaseModel):
 
 
 class AudioService:
+    __audio_converter: AudioConverter
+    __buffer: PlayThroughSampleBuffer
     __input_device: SoundCard
     __instance = None
     __level_callbacks_input: List[Callable[[float, float], None]]
@@ -79,6 +85,7 @@ class AudioService:
     def instance(cls, logger: Logger = get_logger(__name__)):
         if cls.__instance is None:
             cls.__instance = cls.__new__(cls)
+            cls.__instance.__audio_converter = AudioConverter()
             cls.__instance.__input_device = None
             cls.__instance.__level_callbacks_input = []
             cls.__instance.__level_callbacks_output = []
@@ -144,6 +151,10 @@ class AudioService:
 
     def stop(self):
         self.__logger.info(f"{self.LOG_PREFIX}: stop audio engine")
+
+        if self.__state == AudioEngineState.Relaying:
+            self.fade_out()
+
         if self.__stream_in:
             self.__stream_in.stop_stream()
             self.__stream_in.close()
@@ -166,7 +177,7 @@ class AudioService:
         self.__stream_in = self.__pa.open(
             self.SAMPLE_RATE,
             self.__calculate_channel_count(True),
-            self.__pa.get_format_from_width(self.WORD_SIZE),
+            self.__pa.get_format_from_width(self.WORD_SIZE, False),
             True,
             False,
             self.__input_device.id,
@@ -175,7 +186,7 @@ class AudioService:
         self.__stream_out = self.__pa.open(
             self.SAMPLE_RATE,
             self.__calculate_channel_count(False),
-            self.__pa.get_format_from_width(self.WORD_SIZE),
+            self.__pa.get_format_from_width(self.WORD_SIZE, False),
             False,
             True,
             self.__output_device.id,
@@ -188,17 +199,36 @@ class AudioService:
             return min(self.__input_device.channels, self.STEREO)
         return self.STEREO
 
-    def __calculate_numpy_type(self):
-        if self.WORD_SIZE == 2:
-            return np.int16
-        return np.int8
-
     def __record_callback(
         self, in_data: bytes, frame_count: int, time_info: Dict, status
     ):
-        vol_left, vol_right = self.__calculate_levels(
-            in_data, self.__calculate_channel_count(True), frame_count
+        deinterleved = self.__audio_converter.bytes_to_deinterleaved(
+            in_data, self.__calculate_channel_count(True), self.WORD_SIZE
         )
+
+        stereo_deinterleved = (
+            deinterleved
+            if len(deinterleved) > 1
+            else [deinterleved[0], deinterleved[0]]
+        )
+
+        if self.__state in [
+            AudioEngineState.FadeIn,
+            AudioEngineState.Relaying,
+            AudioEngineState.FadeOut,
+        ]:
+            self.__buffer.write(stereo_deinterleved)
+
+        # self.__logger.info(
+        #     f"{self.LOG_PREFIX}: %d decoded vs %d expected and width of %d for %d channels on a buffer of %d bytes",
+        #     len(stereo_deinterleved[0]),
+        #     frame_count,
+        #     self.WORD_SIZE,
+        #     self.__calculate_channel_count(True),
+        #     len(in_data),
+        # )
+
+        vol_left, vol_right = self.__calculate_levels(stereo_deinterleved)
         for callback in self.__level_callbacks_input:
             callback(vol_left, vol_right)
 
@@ -207,34 +237,63 @@ class AudioService:
     def __play_callback(
         self, in_data: bytes, frame_count: int, time_info: Dict, status
     ):
-        data = b"\x00" * frame_count
-        vol_left, vol_right = self.__calculate_levels(
-            data, self.__calculate_channel_count(False), frame_count
-        )
+        # Blank buffers for mixing
+
+        data = [
+            np.zeros(frame_count, self.__calculate_numpy_type()),
+            np.zeros(frame_count, self.__calculate_numpy_type()),
+        ]
+
+        # Relaying
+
+        if self.__state in [
+            AudioEngineState.FadeIn,
+            AudioEngineState.Relaying,
+            AudioEngineState.FadeOut,
+        ]:
+            relay_data = self.__buffer.read(frame_count)
+            left = np.add(data[0], relay_data[0][:frame_count])
+            right = np.add(data[1], relay_data[1][:frame_count])
+            data = [left, right]
+
+            if self.__state == AudioEngineState.FadeIn:
+                self.__logger.info(f"{self.LOG_PREFIX}: move from fade in to relaying")
+                self.__state = AudioEngineState.Relaying
+
+            if self.__state == AudioEngineState.FadeOut:
+                self.__logger.info(f"{self.LOG_PREFIX}: move from fade out to stopped")
+                self.__state = AudioEngineState.Started
+
+        # Levels
+
+        vol_left, vol_right = self.__calculate_levels(data)
         for callback in self.__level_callbacks_output:
             callback(vol_left, vol_right)
 
-        return (data, paContinue)
+        # Pass into the next stage
+
+        output = np.empty(frame_count * 2, self.__calculate_numpy_type())
+        output[0::2] = data[0]
+        output[1::2] = data[1]
+
+        return (output.tobytes(), paContinue)
 
     def __calculate_levels(
-        self, data: bytes, channel_count: int, frame_count: int
+        self, data: List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]
     ) -> Tuple[int, int]:
-        # Decode and deinterleve
-
-        frames = np.frombuffer(data, self.__calculate_numpy_type())
-        deinterleaved = [frames[idx::channel_count] for idx in range(channel_count)]
-
         # Calculate a VU number
         # We force stereo
 
-        power_left = np.square(deinterleaved[0], dtype=np.int64)
-        if len(deinterleaved) == 1:
+        power_left = np.square(data[0], dtype=np.int64)
+        if len(data) == 1:
             power_right = power_left
         else:
-            power_right = np.square(deinterleaved[1], dtype=np.int64)
+            power_right = np.square(data[1], dtype=np.int64)
 
         sum_left = np.sum(power_left)
         sum_right = np.sum(power_right)
+
+        frame_count = min(len(power_left), len(power_right))
 
         if sum_left > 0:
             vol_left = 20 * log10(sqrt(sum_left / frame_count))
@@ -273,3 +332,29 @@ class AudioService:
             "input" if input else "output",
             callback,
         )
+
+    def __calculate_numpy_type(self):
+        if self.WORD_SIZE == 2:
+            return np.int16
+        return np.int8
+
+    def fade_in(self):
+        if not self.__state == AudioEngineState.Started:
+            self.__logger.warn(
+                f"{self.LOG_PREFIX}: fade in not possible as engine is in %s state",
+                self.__state,
+            )
+            return
+
+        self.__buffer = PlayThroughSampleBuffer(self.__calculate_numpy_type())
+        self.__state = AudioEngineState.FadeIn
+
+    def fade_out(self):
+        if not self.__state == AudioEngineState.Relaying:
+            self.__logger.warn(
+                f"{self.LOG_PREFIX}: fade out not possible as engine is in %s state",
+                self.__state,
+            )
+            return
+
+        self.__state = AudioEngineState.FadeOut

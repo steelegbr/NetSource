@@ -1,4 +1,5 @@
 from enum import StrEnum
+from services.audio import AudioService
 from services.logging import get_logger, Logger
 from typing import Callable, List
 
@@ -10,6 +11,7 @@ class ScheduleServiceStatus(StrEnum):
 
 
 class ScheduleService:
+    __audio_service: AudioService
     __callbacks: List[Callable[[ScheduleServiceStatus], None]]
     __instance = None
     __logger: Logger
@@ -26,6 +28,7 @@ class ScheduleService:
     def instance(cls, logger: Logger = get_logger(__name__)):
         if cls.__instance is None:
             cls.__instance = cls.__new__(cls)
+            cls.__instance.__audio_service = AudioService.instance()
             cls.__instance.__callbacks = []
             cls.__instance.__logger = logger
             cls.__status = ScheduleServiceStatus.Stopped
@@ -52,7 +55,9 @@ class ScheduleService:
     def start(self):
         self.__set_status(ScheduleServiceStatus.Started)
         self.__logger.info(f"{self.LOG_PREFIX}: Started")
+        self.__audio_service.fade_in()
 
     def stop(self):
         self.__set_status(ScheduleServiceStatus.Stopped)
         self.__logger.info(f"{self.LOG_PREFIX}: Stopped")
+        self.__audio_service.fade_out()
