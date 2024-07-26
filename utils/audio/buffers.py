@@ -1,22 +1,22 @@
 import numpy as np
+from abc import ABC, abstractmethod
 from services.logging import get_logger, Logger
 from typing import Any, List
 
 
-class AudioConverter:
-    def __calculate_numpy_type(self, word_size: int):
-        if word_size == 2:
-            return np.int16
-        return np.int8
-
-    def bytes_to_deinterleaved(
-        self, data: bytes, channel_count: int, word_size: int
+class SampleBuffer(ABC):
+    @abstractmethod
+    def read(
+        self, sample_count: int
     ) -> List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]:
-        frames = np.frombuffer(data, self.__calculate_numpy_type(word_size))
-        return [frames[idx::channel_count] for idx in range(channel_count)]
+        pass
+
+    @abstractmethod
+    def write(self, samples: List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]):
+        pass
 
 
-class PlayThroughSampleBuffer:
+class PlayThroughSampleBuffer(SampleBuffer):
     __logger: Logger
     __samples_left: np.ndarray[Any, np.dtype[np.int16 | np.int8]]
     __samples_right: np.ndarray[Any, np.dtype[np.int16 | np.int8]]
@@ -74,3 +74,57 @@ class PlayThroughSampleBuffer:
 
         self.__samples_left = np.append(self.__samples_left, samples[0])
         self.__samples_right = np.append(self.__samples_right, samples[1])
+
+
+class ToneSampleBuffer(SampleBuffer):
+    __logger: Logger
+    __samples_left: np.ndarray[Any, np.dtype[np.int16 | np.int8]]
+    __samples_right: np.ndarray[Any, np.dtype[np.int16 | np.int8]]
+    __type: np.int16 | np.int8
+
+    LOG_PREFIX = "Tone Sample Buffer"
+
+    def __init__(
+        self,
+        buffer_type: np.int16 | np.int8,
+        sample_rate: int,
+        frequency: int,
+        length: float,
+        level_dbfs: float,
+    ):
+        self.__logger(get_logger(__name__))
+        self.__type = buffer_type
+        self.__generate_samples(sample_rate, frequency, length, level_dbfs)
+
+    def __generate_samples(
+        self, sample_rate: int, frequency: int, length: float, level_dbfs: float
+    ):
+        sample_count = int(sample_rate * length)
+        self.__logger.info(
+            f"{self.LOG_PREFIX}: generating tone buffer at %dHz (%d dBFS) for %d samples",
+            frequency,
+            level_dbfs,
+            sample_count,
+        )
+
+        amplitude = np.iinfo(self.__type).max * 10 ** (level_dbfs / 20)
+
+        self.__samples_left = np.sin(
+            2 * np.pi * np.arrange(sample_count * frequency / sample_rate)
+        ).astype(self.__type)
+        self.__samples_left = self.__samples_left * amplitude
+        self.__samples_right = np.copy(self.__samples_left)
+
+    def read(
+        self, sample_count: int
+    ) -> List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]:
+        buffer_length = min(len(self.__samples_left), len(self.__samples_right))
+
+        if sample_count > buffer_length:
+            return [left, right]
+
+        left = self.__samples_left[:sample_count]
+        right = self.__samples_right[:sample_count]
+        self.__samples_left = self.__samples_left[sample_count:]
+        self.__samples_right = self.__samples_right[sample_count:]
+        return [left, right]

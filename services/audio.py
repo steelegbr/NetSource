@@ -22,7 +22,8 @@ from pyaudio import (
 from pydantic import BaseModel
 from services.logging import get_logger, Logger
 from typing import Any, Callable, Dict, List, Tuple
-from utils.audio import AudioConverter, PlayThroughSampleBuffer
+from utils.audio.converters import AudioConverter
+from utils.audio.buffers import PlayThroughSampleBuffer
 
 
 class AudioEngineState(StrEnum):
