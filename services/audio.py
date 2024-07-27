@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from services.logging import get_logger, Logger
 from typing import Any, Callable, Dict, List, Tuple
 from utils.audio.converters import AudioConverter
-from utils.audio.buffers import PlayThroughSampleBuffer
+from utils.audio.buffers import PlayThroughSampleBuffer, SampleBuffer, ToneSampleBuffer
 
 
 class AudioEngineState(StrEnum):
@@ -71,6 +71,7 @@ class AudioService:
     __state: AudioEngineState
     __stream_in: Stream
     __stream_out: Stream
+    __playlist: List[SampleBuffer] = []
 
     LOG_PREFIX = "Audio Service"
     SAMPLE_RATE = 48000
@@ -252,18 +253,12 @@ class AudioService:
             AudioEngineState.Relaying,
             AudioEngineState.FadeOut,
         ]:
-            relay_data = self.__buffer.read(frame_count)
-            left = np.add(data[0], relay_data[0][:frame_count])
-            right = np.add(data[1], relay_data[1][:frame_count])
-            data = [left, right]
+            data = self.__relay(frame_count, data)
 
-            if self.__state == AudioEngineState.FadeIn:
-                self.__logger.info(f"{self.LOG_PREFIX}: move from fade in to relaying")
-                self.__state = AudioEngineState.Relaying
+        # Playing through a playlist of buffers
 
-            if self.__state == AudioEngineState.FadeOut:
-                self.__logger.info(f"{self.LOG_PREFIX}: move from fade out to stopped")
-                self.__state = AudioEngineState.Started
+        if self.__state in [AudioEngineState.Started]:
+            data = self.__play_playlist(frame_count)
 
         # Levels
 
@@ -278,6 +273,67 @@ class AudioService:
         output[1::2] = data[1]
 
         return (output.tobytes(), paContinue)
+
+    def __play_playlist(
+        self, frame_count: int
+    ) -> List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]:
+        samples_remaining = frame_count
+        left = np.array([], self.__calculate_numpy_type())
+        right = np.array([], self.__calculate_numpy_type())
+
+        # Work through the playlist until we fill the buffer
+
+        while samples_remaining:
+
+            try:
+                current_item = self.__playlist.pop(0)
+            except IndexError:
+                # We've run out of things to play
+                # Pad out the remaining buffer with zeros
+
+                left = np.append(
+                    left, np.zeros(samples_remaining, self.__calculate_numpy_type())
+                )
+                right = np.append(
+                    right, np.zeros(samples_remaining, self.__calculate_numpy_type())
+                )
+                return [left, right]
+
+            # Copy what we can in
+
+            item_data = current_item.read(samples_remaining)
+            left = np.append(left, item_data[0][:samples_remaining])
+            right = np.append(right, item_data[1][:samples_remaining])
+
+            # Have we finished?
+            # If we have, put the current item back
+            # If not, crack on through the playlist
+
+            samples_remaining = max(0, frame_count - len(left))
+            if not samples_remaining:
+                self.__playlist.insert(0, current_item)
+
+        return [left, right]
+
+    def __relay(
+        self,
+        frame_count: int,
+        data: List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]],
+    ) -> List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]:
+        relay_data = self.__buffer.read(frame_count)
+        left = np.add(data[0], relay_data[0][:frame_count])
+        right = np.add(data[1], relay_data[1][:frame_count])
+        data = [left, right]
+
+        if self.__state == AudioEngineState.FadeIn:
+            self.__logger.info(f"{self.LOG_PREFIX}: move from fade in to relaying")
+            self.__state = AudioEngineState.Relaying
+
+        if self.__state == AudioEngineState.FadeOut:
+            self.__logger.info(f"{self.LOG_PREFIX}: move from fade out to stopped")
+            self.__state = AudioEngineState.Started
+
+        return data
 
     def __calculate_levels(
         self, data: List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]
@@ -359,3 +415,19 @@ class AudioService:
             return
 
         self.__state = AudioEngineState.FadeOut
+
+    def play_tone(self, frequency: int, length: float, level_dbfs: int):
+        self.__logger.info(
+            f"{self.LOG_PREFIX}: request for tone at %d Hz (%d dbFS) for %d seconds",
+            frequency,
+            level_dbfs,
+            length,
+        )
+        tone = ToneSampleBuffer(
+            self.__calculate_numpy_type(),
+            self.SAMPLE_RATE,
+            frequency,
+            length,
+            level_dbfs,
+        )
+        self.__playlist.append(tone)

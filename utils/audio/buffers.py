@@ -92,7 +92,7 @@ class ToneSampleBuffer(SampleBuffer):
         length: float,
         level_dbfs: float,
     ):
-        self.__logger(get_logger(__name__))
+        self.__logger = get_logger(__name__)
         self.__type = buffer_type
         self.__generate_samples(sample_rate, frequency, length, level_dbfs)
 
@@ -110,9 +110,9 @@ class ToneSampleBuffer(SampleBuffer):
         amplitude = np.iinfo(self.__type).max * 10 ** (level_dbfs / 20)
 
         self.__samples_left = np.sin(
-            2 * np.pi * np.arrange(sample_count * frequency / sample_rate)
-        ).astype(self.__type)
-        self.__samples_left = self.__samples_left * amplitude
+            2 * np.pi * np.arange(sample_count) * frequency / sample_rate
+        )
+        self.__samples_left = (self.__samples_left * amplitude).astype(self.__type)
         self.__samples_right = np.copy(self.__samples_left)
 
     def read(
@@ -121,10 +121,13 @@ class ToneSampleBuffer(SampleBuffer):
         buffer_length = min(len(self.__samples_left), len(self.__samples_right))
 
         if sample_count > buffer_length:
-            return [left, right]
+            return [self.__samples_left, self.__samples_right]
 
         left = self.__samples_left[:sample_count]
         right = self.__samples_right[:sample_count]
         self.__samples_left = self.__samples_left[sample_count:]
         self.__samples_right = self.__samples_right[sample_count:]
         return [left, right]
+
+    def write(self, samples: List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]):
+        self.__logger.warn(f"{self.LOG_PREFIX}: request to write to tone buffer")

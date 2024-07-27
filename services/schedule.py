@@ -55,9 +55,7 @@ class ScheduleService:
     def start(self):
         self.__set_status(ScheduleServiceStatus.Started)
         self.__logger.info(f"{self.LOG_PREFIX}: Started")
-        self.__audio_service.fade_in()
 
     def stop(self):
         self.__set_status(ScheduleServiceStatus.Stopped)
         self.__logger.info(f"{self.LOG_PREFIX}: Stopped")
-        self.__audio_service.fade_out()
