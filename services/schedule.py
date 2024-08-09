@@ -1,3 +1,4 @@
+from calendar import day_name
 from enum import StrEnum
 from services.audio import AudioService
 from services.logging import get_logger, Logger
@@ -59,3 +60,6 @@ class ScheduleService:
     def stop(self):
         self.__set_status(ScheduleServiceStatus.Stopped)
         self.__logger.info(f"{self.LOG_PREFIX}: Stopped")
+
+    def days_of_week(self):
+        return day_name

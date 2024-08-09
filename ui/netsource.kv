@@ -50,6 +50,54 @@
                 value: root.level_right
 
 
+<ScheduleSelectBlock>:
+        height: "55dp"
+        size_hint_y: None
+        Label:
+                bold: True
+                font_size: 24
+                size_hint_x: 0.5
+                text: root.label_text
+        Spinner:
+                on_text: root.change_day_of_week(self.text)
+                padding: [0]
+                size_hint_x: 1
+                text: root.selected_day_of_week
+                values: root.days_of_week
+        Label:
+                bold: True
+                font_size: 24
+                size_hint_x: 0.2
+                text: "at"
+        Spinner:
+                on_text: root.change_hour(self.text)
+                padding: [0]
+                size_hint_x: 0.4
+                text: root.selected_hour
+                values: root.hours
+        Label:
+                bold: True
+                font_size: 24
+                size_hint_x: 0.2
+                text: ":"
+        Spinner:
+                on_text: root.change_minute(self.text)
+                padding: [0]
+                size_hint_x: 0.4
+                text: root.selected_minute
+                values: root.minutes
+        Label:
+                bold: True
+                font_size: 24
+                size_hint_x: 0.2
+                text: ":"
+        Spinner:
+                on_text: root.change_second(self.text)
+                padding: [0]
+                size_hint_x: 0.4
+                text: root.selected_second
+                values: root.seconds
+
 
 <HomeScreen>:
         cols: 1
@@ -64,5 +112,9 @@
                 audio_input: False
         AudioLevelsBlock:
                 audio_input: False
+        ScheduleSelectBlock:
+                start_time: True
+        ScheduleSelectBlock:
+                start_time: False
                 
             
