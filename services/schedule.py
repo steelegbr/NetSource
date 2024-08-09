@@ -1,6 +1,7 @@
 from enum import StrEnum
 from services.audio import AudioService
 from services.logging import get_logger, Logger
+from services.tts import TextToSpeechService
 from typing import Callable, List
 
 
@@ -16,6 +17,7 @@ class ScheduleService:
     __instance = None
     __logger: Logger
     __status: ScheduleServiceStatus
+    __tts_service: TextToSpeechService
 
     LOG_PREFIX = "Schedule Service"
 
@@ -31,7 +33,8 @@ class ScheduleService:
             cls.__instance.__audio_service = AudioService.instance()
             cls.__instance.__callbacks = []
             cls.__instance.__logger = logger
-            cls.__status = ScheduleServiceStatus.Stopped
+            cls.__instance.__tts_service = TextToSpeechService.instance()
+            cls.__instance.__status = ScheduleServiceStatus.Stopped
         return cls.__instance
 
     def __set_status(self, status: ScheduleServiceStatus):
