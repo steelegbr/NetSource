@@ -12,7 +12,6 @@ pyaudio = "^0.2.14"
 pydantic = "^2.6.3"
 numpy = "^1.26.4"
 kivymd = "^1.2.0"
-pyttsx3 = "^2.90"
 
 
 [tool.poetry.group.dev.dependencies]
