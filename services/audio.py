@@ -418,7 +418,7 @@ class AudioService:
 
     def play_tone(self, frequency: int, length: float, level_dbfs: int):
         self.__logger.info(
-            f"{self.LOG_PREFIX}: request for tone at %d Hz (%d dbFS) for %d seconds",
+            f"{self.LOG_PREFIX}: request for tone at %d Hz (%d dbFS) for %f seconds",
             frequency,
             level_dbfs,
             length,

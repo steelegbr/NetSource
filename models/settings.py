@@ -14,6 +14,8 @@ class DayOfWeek(IntEnum):
 
 
 class Settings(BaseModel):
+    beep_dbfs: int = -3
+    beep_frequency: int = 1000
     beep_long: float = 1.0
     beep_short: float = 0.5
     day_end: DayOfWeek = DayOfWeek.Sunday

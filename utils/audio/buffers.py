@@ -25,7 +25,7 @@ class PlayThroughSampleBuffer(SampleBuffer):
     LOG_PREFIX = "Play Through Sample Buffer"
 
     def __init__(
-        self, buffer_type: np.int16 | np.int8, preload_length: int = 500
+        self, buffer_type: np.int16 | np.int8, preload_length: int = 1000
     ) -> None:
         self.__logger = get_logger(__name__)
         self.__type = buffer_type
