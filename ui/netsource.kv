@@ -35,20 +35,6 @@
                 text: root.selected_sound_card
                 values: root.sound_cards
 
-<AudioLevelsBlock>:
-        cols: 1
-        height: "20dp"
-        size_hint_y: None
-        ProgressBar:
-                max: 100
-                size_hint_x: 1
-                value: root.level_left
-                size_hint_x: 0.25
-        ProgressBar:
-                max: 100
-                size_hint_x: 1
-                value: root.level_right
-
 
 <ScheduleSelectBlock>:
         height: "55dp"
@@ -106,11 +92,7 @@
         ScheduleServiceBanner:
         AudioSelectBlock:
                 audio_input: True
-        AudioLevelsBlock:
-                audio_input: True
         AudioSelectBlock:
-                audio_input: False
-        AudioLevelsBlock:
                 audio_input: False
         ScheduleSelectBlock:
                 start_time: True
