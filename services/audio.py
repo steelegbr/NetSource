@@ -63,8 +63,6 @@ class AudioService:
     __buffer: PlayThroughSampleBuffer
     __input_device: SoundCard
     __instance = None
-    __level_callbacks_input: List[Callable[[float, float], None]]
-    __level_callbacks_output: List[Callable[[float, float], None]]
     __logger: Logger
     __output_device: SoundCard
     __pa: PyAudio
@@ -221,19 +219,6 @@ class AudioService:
         ]:
             self.__buffer.write(stereo_deinterleved)
 
-        # self.__logger.info(
-        #     f"{self.LOG_PREFIX}: %d decoded vs %d expected and width of %d for %d channels on a buffer of %d bytes",
-        #     len(stereo_deinterleved[0]),
-        #     frame_count,
-        #     self.WORD_SIZE,
-        #     self.__calculate_channel_count(True),
-        #     len(in_data),
-        # )
-
-        vol_left, vol_right = self.__calculate_levels(stereo_deinterleved)
-        for callback in self.__level_callbacks_input:
-            callback(vol_left, vol_right)
-
         return (in_data, paContinue)
 
     def __play_callback(
@@ -259,12 +244,6 @@ class AudioService:
 
         if self.__state in [AudioEngineState.Started]:
             data = self.__play_playlist(frame_count)
-
-        # Levels
-
-        vol_left, vol_right = self.__calculate_levels(data)
-        for callback in self.__level_callbacks_output:
-            callback(vol_left, vol_right)
 
         # Pass into the next stage
 
@@ -334,61 +313,6 @@ class AudioService:
             self.__state = AudioEngineState.Started
 
         return data
-
-    def __calculate_levels(
-        self, data: List[np.ndarray[Any, np.dtype[np.int16 | np.int8]]]
-    ) -> Tuple[int, int]:
-        # Calculate a VU number
-        # We force stereo
-
-        power_left = np.square(data[0], dtype=np.int64)
-        if len(data) == 1:
-            power_right = power_left
-        else:
-            power_right = np.square(data[1], dtype=np.int64)
-
-        sum_left = np.sum(power_left)
-        sum_right = np.sum(power_right)
-
-        frame_count = min(len(power_left), len(power_right))
-
-        if sum_left > 0:
-            vol_left = 20 * log10(sqrt(sum_left / frame_count))
-        else:
-            vol_left = 0
-
-        if sum_right > 0:
-            vol_right = 20 * log10(sqrt(sum_right / frame_count))
-        else:
-            vol_right = 0
-
-        return (vol_left, vol_right)
-
-    def register_levels_callback(
-        self, input: bool, callback: Callable[[float, float], None]
-    ):
-        if input:
-            self.__level_callbacks_input.append(callback)
-        else:
-            self.__level_callbacks_output.append(callback)
-        self.__logger.info(
-            f"{self.LOG_PREFIX}: register %s levels callback %s",
-            "input" if input else "output",
-            callback,
-        )
-
-    def deregister_levels_callback(
-        self, input: bool, callback: Callable[[float, float], None]
-    ):
-        if input and callback in self.__level_callbacks_input:
-            self.__level_callbacks_input.remove(callback)
-        elif not input and callback in self.__level_callbacks_output:
-            self.__level_callbacks_output.remove(callback)
-        self.__logger.info(
-            f"{self.LOG_PREFIX}: deregister %s levels callback %s",
-            "input" if input else "output",
-            callback,
-        )
 
     def __calculate_numpy_type(self):
         if self.WORD_SIZE == 2:

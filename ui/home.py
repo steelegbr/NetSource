@@ -133,54 +133,6 @@ class AudioSelectBlock(BoxLayout):
                 self.__audio_service.set_output_device(possible_sound_cards[0])
 
 
-class AudioLevelsBlock(GridLayout):
-    audio_input = BooleanProperty()
-    colour_left = ListProperty([1, 1, 1, 1])
-    colour_right = ListProperty([1, 1, 1, 1])
-    level_left = NumericProperty(0)
-    level_right = NumericProperty(0)
-
-    # Trigger at -3dBFS and -6dBFS
-
-    LEVEL_RED = 10 ** (-3 / 20) * 100
-    LEVEL_ORANGE = 10 ** (-6 / 20) * 100
-    COLOUR_ORANGE = [0.94, 0.55, 0.2, 1]
-    COLOUR_GREEN = [0.13, 0.55, 0.1, 1]
-    COLOUR_RED = [1, 0, 0, 1]
-
-    __audio_service: AudioService
-
-    def __init__(self, audio_service: AudioService = AudioService.instance(), **kwargs):
-        super().__init__(**kwargs)
-        self.__audio_service = audio_service
-        self.__register_callback()
-
-    def on_audio_input(self, instance, value):
-        self.audio_input = value
-        self.__register_callback()
-
-    def __calculate_colour(self, value: float) -> List:
-        if value > self.LEVEL_RED:
-            return self.COLOUR_RED
-        if value > self.LEVEL_ORANGE:
-            return self.COLOUR_ORANGE
-        return self.COLOUR_GREEN
-
-    def __levels_callback(self, left: float, right: float):
-        self.level_left = left
-        self.level_right = right
-        self.colour_left = self.__calculate_colour(left)
-        self.colour_right = self.__calculate_colour(right)
-
-    def __register_callback(self):
-        self.__audio_service.deregister_levels_callback(
-            not self.audio_input, self.__levels_callback
-        )
-        self.__audio_service.register_levels_callback(
-            self.audio_input, self.__levels_callback
-        )
-
-
 class ScheduleSelectBlock(BoxLayout):
     days_of_week = ListProperty([])
     hours = ListProperty([])
